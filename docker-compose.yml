@@ -24,3 +24,23 @@ services:
 
     stdin_open: true
     tty: true
+
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:16
+
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: smart_map
+      POSTGRES_DB: car_data
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
