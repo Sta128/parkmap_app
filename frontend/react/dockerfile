@@ -1,6 +1,4 @@
-FROM ubuntu:22.04
-
-RUN apt update && apt install -y nodejs npm
+FROM node:22
 
 WORKDIR /app
 
