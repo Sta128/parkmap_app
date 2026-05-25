@@ -1,12 +1,12 @@
 services:
   frontend:
-    build: ./frontend/react
+    build: ./frontend
 
     ports:
       - "5173:5173"
 
     volumes:
-      - ./frontend/react:/app
+      - ./frontend:/app
       - /app/node_modules
 
     stdin_open: true
@@ -22,25 +22,8 @@ services:
       - ./backend:/app
       - /app/node_modules
 
+    env_file:
+      - ./backend/.env
+
     stdin_open: true
     tty: true
-
-    depends_on:
-      - postgres
-
-  postgres:
-    image: postgres:16
-
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: smart_map
-      POSTGRES_DB: car_data
-
-    ports:
-      - "5432:5432"
-
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-volumes:
-  postgres_data:
