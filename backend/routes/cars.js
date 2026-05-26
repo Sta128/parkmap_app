@@ -1,125 +1,78 @@
 const express = require('express')
 const router = express.Router()
-const pool = require('../cardb')
+const { createClient } = require('@supabase/supabase-js')
+require('dotenv').config()
+
+const supabase = createClient(
+  process.env.DATABASE_URL,
+  process.env.DATABASE_KEY
+)
 
 /**
  * 一覧取得
  */
 router.get('/', async (req, res) => {
-  try {
-    const result = await pool.query(
-      'SELECT * FROM cars ORDER BY id ASC'
-    )
-
-    res.json(result.rows)
-  } catch (err) {
-    console.error(err)
-    res.status(500).json({ error: 'server error' })
-  }
+  const { data, error } = await supabase
+    .from('cars')
+    .select('*')
+    .order('id', { ascending: true })
+  if (error) return res.status(500).json({ error: 'server error' })
+  res.json(data)
 })
 
 /**
  * 新規登録
  */
 router.post('/', async (req, res) => {
-  try {
-    const {
-      name,
-      height,
-      width,
-      length,
-      ground_clearance
-    } = req.body
+  const { name, height, width, length, ground_clearance } = req.body
 
-    // 最大5台
-    const count = await pool.query(
-      'SELECT COUNT(*) FROM cars'
-    )
+  // 最大5台
+  const { count, error: countError } = await supabase
+    .from('cars')
+    .select('*', { count: 'exact', head: true })
 
-    if (Number(count.rows[0].count) >= 5) {
-      return res.status(400).json({
-        error: '最大5台までです'
-      })
-    }
+  if (countError) return res.status(500).json({ error: 'server error' })
 
-    const result = await pool.query(
-      `
-      INSERT INTO cars
-      (name, height, width, length, ground_clearance)
-      VALUES ($1, $2, $3, $4, $5)
-      RETURNING *
-      `,
-      [name, height, width, length, ground_clearance]
-    )
-
-    res.json(result.rows[0])
-  } catch (err) {
-    console.error(err)
-    res.status(500).json({ error: 'server error' })
+  if (count >= 5) {
+    return res.status(400).json({ error: '最大5台までです' })
   }
+
+  const { data, error } = await supabase
+    .from('cars')
+    .insert({ name, height, width, length, ground_clearance })
+    .select()
+  if (error) return res.status(500).json({ error: 'server error' })
+  res.json(data[0])
 })
 
 /**
  * 更新
  */
 router.put('/:id', async (req, res) => {
-  try {
-    const { id } = req.params
+  const { id } = req.params
+  const { name, height, width, length, ground_clearance } = req.body
 
-    const {
-      name,
-      height,
-      width,
-      length,
-      ground_clearance
-    } = req.body
-
-    const result = await pool.query(
-      `
-      UPDATE cars
-      SET
-        name = $1,
-        height = $2,
-        width = $3,
-        length = $4,
-        ground_clearance = $5
-      WHERE id = $6
-      RETURNING *
-      `,
-      [
-        name,
-        height,
-        width,
-        length,
-        ground_clearance,
-        id
-      ]
-    )
-
-    res.json(result.rows[0])
-  } catch (err) {
-    console.error(err)
-    res.status(500).json({ error: 'server error' })
-  }
+  const { data, error } = await supabase
+    .from('cars')
+    .update({ name, height, width, length, ground_clearance })
+    .eq('id', id)
+    .select()
+  if (error) return res.status(500).json({ error: 'server error' })
+  res.json(data[0])
 })
 
 /**
  * 削除
  */
 router.delete('/:id', async (req, res) => {
-  try {
-    const { id } = req.params
+  const { id } = req.params
 
-    await pool.query(
-      'DELETE FROM cars WHERE id = $1',
-      [id]
-    )
-
-    res.json({ message: 'deleted' })
-  } catch (err) {
-    console.error(err)
-    res.status(500).json({ error: 'server error' })
-  }
+  const { error } = await supabase
+    .from('cars')
+    .delete()
+    .eq('id', id)
+  if (error) return res.status(500).json({ error: 'server error' })
+  res.json({ message: 'deleted' })
 })
 
 module.exports = router
