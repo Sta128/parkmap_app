@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import {
   APIProvider,
   Map,
-  Marker,
+  AdvancedMarker,
+  InfoWindow
 } from '@vis.gl/react-google-maps'
 
 type Position = {
@@ -10,8 +11,24 @@ type Position = {
   lng: number
 }
 
+type Parking = {
+  id: string
+  name: string
+  lat: number
+  lng: number
+  status: string
+
+  price?: number
+  address?: string
+  available?: number
+}
+
 export const Maps = () => {
   const [userPos, setUserPos] = useState<Position | null>(null)
+  const [parkings, setParkings] = useState<Parking[]>([])
+
+  const [selected, setSelected] = useState<Parking | null>(null)
+  const [hovered, setHovered] = useState<Parking | null>(null)
 
   useEffect(() => {
     navigator.geolocation.getCurrentPosition(
@@ -31,6 +48,12 @@ export const Maps = () => {
         })
       }
     )
+  }, [])
+
+  useEffect(() => {
+    fetch('http://localhost:3000/parkings')
+      .then(res => res.json())
+      .then(data => setParkings(data))
   }, [])
 
   // 位置取得中
@@ -53,7 +76,40 @@ export const Maps = () => {
         keyboardShortcuts={false}
         reuseMaps={true}
       >
-        <Marker position={userPos} />
+        {/* 現在地 */}
+        <AdvancedMarker position={userPos} />
+
+        {/* 駐車場 */}
+        {parkings.map(parking => (
+          <AdvancedMarker
+            key={parking.id}
+            position={{
+              lat: parking.lat,
+              lng: parking.lng
+            }}
+            onClick={() => setSelected(parking)}
+            onMouseEnter={() => setHovered(parking)}
+            onMouseLeave={() => setHovered(null)}
+          />
+        ))}
+
+        {/* クリック時 */}
+        {selected && (
+          <InfoWindow
+            position={{
+              lat: selected.lat,
+              lng: selected.lng
+            }}
+            onCloseClick={() => setSelected(null)}
+          >
+            <div>
+              <h2>{selected.name}</h2>
+              <p>住所: {selected.address}</p>
+              <p>空き: {selected.available}</p>
+              <p>料金: {selected.price}円</p>
+            </div>
+          </InfoWindow>
+        )}
       </Map>
     </APIProvider>
   )
