@@ -12,6 +12,11 @@ console.log('cars router loaded')
 
 app.use('/cars', carsRouter)
 
+const parkingsRouter = require('./routes/parkings')
+console.log('parkings router loaded')
+
+app.use('/parkings', parkingsRouter)
+
 app.listen(3000, () => {
   console.log('server started')
 })
