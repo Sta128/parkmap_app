@@ -3,7 +3,8 @@ import {
   APIProvider,
   Map,
   AdvancedMarker,
-  InfoWindow
+  InfoWindow,
+  useMap
 } from '@vis.gl/react-google-maps'
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
@@ -30,6 +31,49 @@ type ParkingWithDistance = Parking & {
   durationText?: string
 }
 
+const DirectionsLayer = ({ origin, destination }: {
+  origin: Position
+  destination: Position | null
+}) => {
+  const map = useMap()
+  const rendererRef = useRef<any>(null)
+
+  useEffect(() => {
+    if (!map || typeof window.google === 'undefined') return
+
+    if (!rendererRef.current) {
+      rendererRef.current = new window.google.maps.DirectionsRenderer({
+        suppressMarkers: true,
+      })
+    }
+
+    if (!destination) {
+      rendererRef.current.setMap(null)
+      return
+    }
+
+    rendererRef.current.setMap(map)
+
+    const service = new window.google.maps.DirectionsService()
+    service.route(
+      {
+        origin,
+        destination,
+        travelMode: window.google.maps.TravelMode.DRIVING,
+      },
+      (result: any, status: any) => {
+        if (status === 'OK' && result) {
+          rendererRef.current?.setDirections(result)
+        } else {
+          console.error('Directions エラー:', status)
+        }
+      }
+    )
+  }, [map, origin, destination])
+
+  return null
+}
+
 export const Maps = () => {
   const [userPos, setUserPos] = useState<Position | null>(null)
   const [parkings, setParkings] = useState<Parking[]>([])
@@ -37,7 +81,6 @@ export const Maps = () => {
   const [selected, setSelected] = useState<ParkingWithDistance | null>(null)
   const [distanceLoading, setDistanceLoading] = useState(false)
   const [apiLoaded, setApiLoaded] = useState(false)
-
   const watchIdRef = useRef<number | null>(null)
   const lastCalcPosRef = useRef<Position | null>(null)
 
@@ -164,7 +207,16 @@ export const Maps = () => {
             keyboardShortcuts={false}
             reuseMaps={true}
           >
-            <AdvancedMarker position={userPos} />
+            <DirectionsLayer
+              origin={userPos}
+              destination={selected ? { lat: selected.lat, lng: selected.lng } : null}
+            />
+
+            <AdvancedMarker position={userPos} anchorLeft="-50%" anchorTop="-50%">
+              <svg width="20" height="20" viewBox="0 0 20 20">
+                <circle cx="10" cy="10" r="7" fill="#1976D2" stroke="white" strokeWidth="2" />
+              </svg>
+            </AdvancedMarker>
 
             {sortedParkings.map(parking => (
               <AdvancedMarker
