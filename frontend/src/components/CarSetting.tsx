@@ -63,6 +63,7 @@ export const CarSetting = () => {
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchCars()
   }, [])
 
@@ -130,7 +131,7 @@ export const CarSetting = () => {
         icon={<SettingsIcon />}
         position='fixed'
         top='20px'
-        left='20px'
+        right='20px'
         borderRadius='full'
         zIndex={1000}
         colorScheme='blue'
