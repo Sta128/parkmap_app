@@ -1,5 +1,5 @@
 import { InfoWindow } from '@vis.gl/react-google-maps'
-import type { ParkingWithDistance, Position } from '../types/types'
+import type { ParkingWithDistance, Position } from '../types/parkings'
 
 type Props = {
   parking: ParkingWithDistance
