@@ -1,6 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { Maps } from './maps/Map.tsx'
+import { Maps } from './maps/Maps.tsx'
 import { ChakraProvider } from '@chakra-ui/react'
 
 
