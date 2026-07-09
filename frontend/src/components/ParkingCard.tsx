@@ -24,7 +24,7 @@ export const ParkingCard = ({ parking, isSelected, onClick }: Props) => (
           {parking.name}
         </Text>
         <Badge
-          colorScheme={parking.status === '空車' ? 'green' : parking.status === '満車' ? 'red' : 'yellow'}
+          colorScheme={parking.status === 'open' ? 'green' : parking.status === 'close' ? 'red' : 'yellow'}
           fontSize="xs"
         >
           {parking.status}
@@ -33,7 +33,7 @@ export const ParkingCard = ({ parking, isSelected, onClick }: Props) => (
       <HStack spacing={3} color="gray.600" fontSize="xs">
         {parking.distanceText && <Text>{parking.distanceText}</Text>}
         {parking.durationText && <Text>{parking.durationText}</Text>}
-        {parking.price != null && <Text>¥{parking.price}/h</Text>}
+        {parking.price != null && <Text>¥{parking.price}</Text>}
       </HStack>
       {parking.address && (
         <Text fontSize="xs" color="gray.500" noOfLines={1}>
