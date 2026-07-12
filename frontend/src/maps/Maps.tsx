@@ -18,6 +18,8 @@ import {
   SearchRadiusCircle,
 } from '../components'
 import type { ParkingWithDistance, Position, SortMode } from '../types/parkings'
+import { parkingApi } from '../features/parkings/api/parkingApi'
+import { useVehicles } from '../features/vehicles/hooks/useVehicles'
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
 
@@ -94,9 +96,10 @@ export const Maps = () => {
   const [priceParkings, setPriceParkings] = useState<ParkingWithDistance[]>([])
 
   const { isOpen, onOpen, onClose } = useDisclosure()
+  const { selectedVehicle } = useVehicles()
 
   const userPos = useGeolocation()
-  const parkings = useParkings()
+  const { parkings, loading: parkingsLoading, error: parkingsError } = useParkings()
   const origin = searchCenter ?? userPos
   const { sortedParkings, distanceLoading, resetCache } =
     useDistanceMatrix(origin, parkings, apiLoaded)
@@ -116,38 +119,28 @@ export const Maps = () => {
     setPriceLoading(true)
 
     try {
-      const res = await fetch('http://localhost:3000/parkings/search', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          start: `${startTime}:00+09:00`,
-          end: `${endTime}:00+09:00`,
-          sortKey: 'fee',
-          ascending: true,
-          minHeight: null,
-          maxFee: null,
-        }),
+      const data = await parkingApi.searchByPrice({
+        start: `${startTime}:00+09:00`,
+        end: `${endTime}:00+09:00`,
+        vehicleHeight: selectedVehicle?.height,
+        vehicleWidth: selectedVehicle?.width,
+        vehicleLength: selectedVehicle?.length,
+        groundClearance: selectedVehicle?.groundClearance,
       })
 
-      if (!res.ok) {
-        throw new Error('料金検索に失敗しました')
-      }
+      const nearbyById = new globalThis.Map(sortedParkings.map(parking => [parking.id, parking]))
+      const merged = data.flatMap((p: ParkingWithDistance & { total_fee?: number }) => {
+        const original = nearbyById.get(p.id)
+        if (!original) return []
 
-      const data = await res.json()
-
-      const merged = data.map((p: ParkingWithDistance & { total_fee?: number }) => {
-        const original = sortedParkings.find(sp => sp.id === p.id)
-
-        return {
+        return [{
           ...original,
           ...p,
           price: p.total_fee,
-          distanceText: original?.distanceText,
-          distanceValue: original?.distanceValue,
-          durationText: original?.durationText,
-        } as ParkingWithDistance
+          distanceText: original.distanceText,
+          distanceValue: original.distanceValue,
+          durationText: original.durationText,
+        } as ParkingWithDistance]
       })
 
       setPriceParkings(merged)
@@ -173,9 +166,18 @@ export const Maps = () => {
         ? priceParkings
         : sortedParkings
 
-    const filtered = filterText
-      ? baseParkings.filter(p => p.name.includes(filterText))
+    const vehicleFiltered = selectedVehicle
+      ? baseParkings.filter(p =>
+          (p.max_height == null || selectedVehicle.height <= p.max_height) &&
+          (p.max_width == null || selectedVehicle.width <= p.max_width) &&
+          (p.max_length == null || selectedVehicle.length <= p.max_length) &&
+          (p.min_ground_clearance == null || selectedVehicle.groundClearance >= p.min_ground_clearance)
+        )
       : baseParkings
+
+    const filtered = filterText
+      ? vehicleFiltered.filter(p => p.name.toLowerCase().includes(filterText.toLowerCase()))
+      : vehicleFiltered
 
     if (sortMode === 'price') {
       return [...filtered].sort(
@@ -184,10 +186,14 @@ export const Maps = () => {
     }
 
     return filtered
-  }, [sortedParkings, priceParkings, filterText, sortMode])
+  }, [sortedParkings, priceParkings, filterText, sortMode, selectedVehicle])
 
   if (!userPos) {
     return <Box p={8} textAlign="center">位置情報取得中...</Box>
+  }
+
+  if (parkingsError) {
+    console.error(parkingsError)
   }
 
   return (
@@ -280,7 +286,7 @@ export const Maps = () => {
             size="lg"
             px={8}
           >
-            {distanceLoading || priceLoading
+            {distanceLoading || priceLoading || parkingsLoading
               ? '計算中...'
               : `${displayedParkings.length}件の駐車場`}
           </Button>
@@ -296,7 +302,7 @@ export const Maps = () => {
           onSortModeChange={handleSortModeChange}
           filterText={filterText}
           onFilterChange={setFilterText}
-          loading={distanceLoading || priceLoading}
+          loading={distanceLoading || priceLoading || parkingsLoading}
           startTime={startTime}
           endTime={endTime}
           onStartTimeChange={setStartTime}

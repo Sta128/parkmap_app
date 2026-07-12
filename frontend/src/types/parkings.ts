@@ -1,7 +1,4 @@
-export type Position = {
-  lat: number
-  lng: number
-}
+export type Position = { lat: number; lng: number }
 
 export type Parking = {
   id: string
@@ -15,8 +12,15 @@ export type Parking = {
   close_time: string
   is_24h: boolean
   status: string
-  // 料金検索後のみ値が入る
   price?: number
+  max_height?: number | null
+  max_width?: number | null
+  max_length?: number | null
+  max_weight?: number | null
+  min_ground_clearance?: number | null
+  is_light_only?: boolean
+  is_ev_available?: boolean
+  is_cashless?: boolean
 }
 
 export type ParkingWithDistance = Parking & {
