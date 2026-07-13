@@ -1,0 +1,17 @@
+{
+  "name": "ParkMap - 駐車場検索",
+  "short_name": "ParkMap",
+  "description": "車両条件・距離・料金から駐車場を検索できるアプリ",
+  "lang": "ja",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f7fafc",
+  "theme_color": "#3182ce",
+  "icons": [
+    {"src":"/icons/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any"},
+    {"src":"/icons/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any"},
+    {"src":"/icons/icon-maskable-512.png","sizes":"512x512","type":"image/png","purpose":"maskable"}
+  ]
+}

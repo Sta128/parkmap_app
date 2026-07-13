@@ -1,25 +1,62 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import {
   APIProvider,
   Map,
   AdvancedMarker,
 } from '@vis.gl/react-google-maps'
-import { Box, Button, useDisclosure } from '@chakra-ui/react'
+import {
+  Box,
+  Button,
+  Popover,
+  PopoverArrow,
+  PopoverBody,
+  PopoverContent,
+  PopoverTrigger,
+  Slider,
+  SliderFilledTrack,
+  SliderThumb,
+  SliderTrack,
+  Text,
+  useDisclosure,
+} from '@chakra-ui/react'
 import { useGeolocation } from '../hooks/useGeolocation'
 import { useParkings } from '../hooks/useParkings'
 import { useDistanceMatrix } from '../hooks/useDistanceMatrix'
 import {
   AutocompleteInput,
   BottomSheet,
-  CarSetting,
   DirectionsLayer,
   MapController,
   ParkingInfoWindow,
   SearchRadiusCircle,
 } from '../components'
 import type { ParkingWithDistance, Position, SortMode } from '../types/parkings'
+import { parkingApi } from '../features/parkings/api/parkingApi'
+import { VehicleSettings } from '../features/vehicles/components/VehicleSettings'
+import { useVehicles } from '../features/vehicles/hooks/useVehicles'
+import { matchesJapaneseText } from '../lib/searchNormalization'
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+const SEARCH_RADIUS_OPTIONS = [0.5, 1, 2, 3, 5, 10, 20, 30, 50, 100, 200] as const
+
+const padDatePart = (value: number) => String(value).padStart(2, '0')
+
+const toLocalDateTimeValue = (date: Date) =>
+  `${date.getFullYear()}-${padDatePart(date.getMonth() + 1)}-${padDatePart(date.getDate())}T${padDatePart(date.getHours())}:${padDatePart(date.getMinutes())}`
+
+const roundUpToQuarterHour = (date: Date) => {
+  const next = new Date(date)
+  next.setSeconds(0, 0)
+  const remainder = next.getMinutes() % 15
+  if (remainder !== 0) next.setMinutes(next.getMinutes() + (15 - remainder))
+  return next
+}
+
+const addYears = (date: Date, years: number) => {
+  const next = new Date(date)
+  next.setFullYear(next.getFullYear() + years)
+  return next
+}
 
 type ParkingMarkerProps = {
   available: number
@@ -76,6 +113,22 @@ export default function ParkingMarker({
           d={greenArc}
           fill="#b7df2d"
         />
+
+        {/* 中央に空車台数 */}
+        <text
+          x={cx}
+          y={cy + 1}
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fill="white"
+          stroke="black"
+          strokeWidth="1.0"
+          paintOrder="stroke"
+          fontSize={available >= 100 ? 12 : 15}
+          fontWeight="700"
+        >
+          {Math.max(0, available)}
+        </text>
       </svg>
     </div>
   )
@@ -88,23 +141,68 @@ export const Maps = () => {
   const [routeTarget, setRouteTarget] = useState<Position | null>(null)
   const [sortMode, setSortMode] = useState<SortMode>('distance')
   const [filterText, setFilterText] = useState('')
-  const [startTime, setStartTime] = useState('')
-  const [endTime, setEndTime] = useState('')
+  const [dateTimeBounds] = useState(() => {
+    const min = roundUpToQuarterHour(new Date())
+    return { min, max: addYears(min, 3) }
+  })
+  const [startTime, setStartTime] = useState(() => toLocalDateTimeValue(dateTimeBounds.min))
+  const [endTime, setEndTime] = useState(() => {
+    const end = new Date(dateTimeBounds.min)
+    end.setHours(end.getHours() + 1)
+    return toLocalDateTimeValue(end)
+  })
   const [priceLoading, setPriceLoading] = useState(false)
   const [priceParkings, setPriceParkings] = useState<ParkingWithDistance[]>([])
+  const [searchRadiusKm, setSearchRadiusKm] = useState(5)
 
   const { isOpen, onOpen, onClose } = useDisclosure()
+  const { selectedVehicle } = useVehicles()
 
   const userPos = useGeolocation()
-  const parkings = useParkings()
+  const { parkings, loading: parkingsLoading, error: parkingsError } = useParkings()
   const origin = searchCenter ?? userPos
   const { sortedParkings, distanceLoading, resetCache } =
-    useDistanceMatrix(origin, parkings, apiLoaded)
+    useDistanceMatrix(origin, parkings, apiLoaded, searchRadiusKm * 1000)
 
-  const handlePlaceSelect = (pos: Position) => {
+  const handlePlaceSelect = useCallback((pos: Position) => {
     setSearchCenter(pos)
     resetCache()
     setPriceParkings([])
+  }, [resetCache])
+
+  const radiusDialIndex = SEARCH_RADIUS_OPTIONS.findIndex(radius => radius === searchRadiusKm)
+
+  const handleRadiusDialChange = (index: number) => {
+    const nextRadius = SEARCH_RADIUS_OPTIONS[index] ?? 5
+    setSearchRadiusKm(nextRadius)
+    setPriceParkings([])
+    resetCache()
+  }
+
+  const handleStartTimeChange = (value: string) => {
+    setStartTime(value)
+
+    const nextStart = new Date(value)
+    const currentEnd = new Date(endTime)
+    if (!Number.isNaN(nextStart.getTime()) && (Number.isNaN(currentEnd.getTime()) || currentEnd <= nextStart)) {
+      const nextEnd = new Date(nextStart)
+      nextEnd.setHours(nextEnd.getHours() + 1)
+      if (nextEnd > dateTimeBounds.max) nextEnd.setTime(dateTimeBounds.max.getTime())
+      setEndTime(toLocalDateTimeValue(nextEnd))
+    }
+  }
+
+  const handleEndTimeChange = (value: string) => {
+    const nextEnd = new Date(value)
+    const currentStart = new Date(startTime)
+    if (nextEnd <= currentStart) {
+      const adjusted = new Date(currentStart)
+      adjusted.setMinutes(adjusted.getMinutes() + 15)
+      if (adjusted > dateTimeBounds.max) adjusted.setTime(dateTimeBounds.max.getTime())
+      setEndTime(toLocalDateTimeValue(adjusted))
+      return
+    }
+    setEndTime(value)
   }
 
   const handlePriceSearch = async () => {
@@ -116,38 +214,32 @@ export const Maps = () => {
     setPriceLoading(true)
 
     try {
-      const res = await fetch('http://localhost:3000/parkings/search', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          start: `${startTime}:00+09:00`,
-          end: `${endTime}:00+09:00`,
-          sortKey: 'fee',
-          ascending: true,
-          minHeight: null,
-          maxFee: null,
-        }),
+      const data = await parkingApi.searchByPrice({
+        start: `${startTime}:00+09:00`,
+        end: `${endTime}:00+09:00`,
+        vehicleHeight: selectedVehicle?.height,
+        vehicleWidth: selectedVehicle?.width,
+        vehicleLength: selectedVehicle?.length,
+        vehicleWeight: selectedVehicle?.weight,
+        groundClearance: selectedVehicle?.groundClearance,
+        requiresEv: selectedVehicle?.isEv,
+        requiresCashless: selectedVehicle?.requiresCashless,
+        lightVehicle: selectedVehicle?.isLightVehicle,
       })
 
-      if (!res.ok) {
-        throw new Error('料金検索に失敗しました')
-      }
+      const nearbyById = new globalThis.Map(sortedParkings.map(parking => [parking.id, parking]))
+      const merged = data.flatMap((p: ParkingWithDistance & { total_fee?: number }) => {
+        const original = nearbyById.get(p.id)
+        if (!original) return []
 
-      const data = await res.json()
-
-      const merged = data.map((p: ParkingWithDistance & { total_fee?: number }) => {
-        const original = sortedParkings.find(sp => sp.id === p.id)
-
-        return {
+        return [{
           ...original,
           ...p,
           price: p.total_fee,
-          distanceText: original?.distanceText,
-          distanceValue: original?.distanceValue,
-          durationText: original?.durationText,
-        } as ParkingWithDistance
+          distanceText: original.distanceText,
+          distanceValue: original.distanceValue,
+          durationText: original.durationText,
+        } as ParkingWithDistance]
       })
 
       setPriceParkings(merged)
@@ -173,9 +265,21 @@ export const Maps = () => {
         ? priceParkings
         : sortedParkings
 
-    const filtered = filterText
-      ? baseParkings.filter(p => p.name.includes(filterText))
+    const vehicleFiltered = selectedVehicle
+      ? baseParkings.filter(p =>
+          (p.max_height == null || selectedVehicle.height <= p.max_height) &&
+          (p.max_width == null || selectedVehicle.width <= p.max_width) &&
+          (p.max_length == null || selectedVehicle.length <= p.max_length) &&
+          (p.min_ground_clearance == null || selectedVehicle.groundClearance >= p.min_ground_clearance) &&
+          (!p.is_light_only || selectedVehicle.isLightVehicle) &&
+          (!selectedVehicle.isEv || p.is_ev_available) &&
+          (!selectedVehicle.requiresCashless || p.is_cashless)
+        )
       : baseParkings
+
+    const filtered = filterText
+      ? vehicleFiltered.filter(p => matchesJapaneseText(`${p.name} ${p.address ?? ''}`, filterText))
+      : vehicleFiltered
 
     if (sortMode === 'price') {
       return [...filtered].sort(
@@ -184,15 +288,19 @@ export const Maps = () => {
     }
 
     return filtered
-  }, [sortedParkings, priceParkings, filterText, sortMode])
+  }, [sortedParkings, priceParkings, filterText, sortMode, selectedVehicle])
 
   if (!userPos) {
     return <Box p={8} textAlign="center">位置情報取得中...</Box>
   }
 
+  if (parkingsError) {
+    console.error(parkingsError)
+  }
+
   return (
     <>
-      <CarSetting />
+      <VehicleSettings />
 
       <APIProvider
         apiKey={GOOGLE_MAPS_API_KEY}
@@ -212,7 +320,7 @@ export const Maps = () => {
           >
             <MapController center={searchCenter} />
             <DirectionsLayer origin={userPos} destination={routeTarget} />
-            {origin && <SearchRadiusCircle center={origin} />}
+            {origin && <SearchRadiusCircle center={origin} radiusM={searchRadiusKm * 1000} />}
 
             <AdvancedMarker position={userPos}>
               <svg width="20" height="20" viewBox="0 0 20 20">
@@ -248,6 +356,7 @@ export const Maps = () => {
                   setRouteTarget(null)
                 }}
                 onRouteRequest={setRouteTarget}
+                navigationOrigin={userPos}
               />
             )}
           </Map>
@@ -258,13 +367,62 @@ export const Maps = () => {
             left="12px"
             right="72px"
             zIndex={10}
+            display="flex"
+            alignItems="center"
+            gap={1}
             bg="white"
             borderRadius="xl"
             boxShadow="md"
             px={2}
             py={1}
           >
-            <AutocompleteInput onPlaceSelect={handlePlaceSelect} />
+            <Box flex="1" minW={0}>
+              <AutocompleteInput onPlaceSelect={handlePlaceSelect} />
+            </Box>
+            <Popover placement="bottom-end" closeOnBlur>
+              <PopoverTrigger>
+                <Button
+                  aria-label={`検索範囲 ${searchRadiusKm}km`}
+                  size="sm"
+                  minW="66px"
+                  flexShrink={0}
+                  borderRadius="full"
+                  variant="ghost"
+                  borderLeft="1px solid"
+                  borderColor="gray.200"
+                  fontWeight="700"
+                >
+                  {searchRadiusKm} km
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent width="260px" mr={2}>
+                <PopoverArrow />
+                <PopoverBody px={4} py={3}>
+                  <Box display="flex" justifyContent="space-between" alignItems="baseline" mb={3}>
+                    <Text fontSize="sm" fontWeight="700">検索範囲</Text>
+                    <Text fontSize="lg" fontWeight="800">{searchRadiusKm} km</Text>
+                  </Box>
+                  <Slider
+                    aria-label="検索範囲ダイヤル"
+                    min={0}
+                    max={SEARCH_RADIUS_OPTIONS.length - 1}
+                    step={1}
+                    value={radiusDialIndex >= 0 ? radiusDialIndex : 4}
+                    onChange={handleRadiusDialChange}
+                    focusThumbOnChange={false}
+                  >
+                    <SliderTrack height="8px" borderRadius="full">
+                      <SliderFilledTrack />
+                    </SliderTrack>
+                    <SliderThumb boxSize="22px" boxShadow="md" />
+                  </Slider>
+                  <Box display="flex" justifyContent="space-between" mt={2}>
+                    <Text fontSize="xs" color="gray.500">0.5 km</Text>
+                    <Text fontSize="xs" color="gray.500">200 km</Text>
+                  </Box>
+                </PopoverBody>
+              </PopoverContent>
+            </Popover>
           </Box>
 
           <Button
@@ -280,7 +438,7 @@ export const Maps = () => {
             size="lg"
             px={8}
           >
-            {distanceLoading || priceLoading
+            {distanceLoading || priceLoading || parkingsLoading
               ? '計算中...'
               : `${displayedParkings.length}件の駐車場`}
           </Button>
@@ -296,12 +454,14 @@ export const Maps = () => {
           onSortModeChange={handleSortModeChange}
           filterText={filterText}
           onFilterChange={setFilterText}
-          loading={distanceLoading || priceLoading}
+          loading={distanceLoading || priceLoading || parkingsLoading}
           startTime={startTime}
           endTime={endTime}
-          onStartTimeChange={setStartTime}
-          onEndTimeChange={setEndTime}
+          onStartTimeChange={handleStartTimeChange}
+          onEndTimeChange={handleEndTimeChange}
           onPriceSearch={handlePriceSearch}
+          minDateTime={dateTimeBounds.min}
+          maxDateTime={dateTimeBounds.max}
         />
       </APIProvider>
     </>

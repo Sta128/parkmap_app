@@ -1,16 +1,15 @@
 import { Circle } from '@vis.gl/react-google-maps'
 import type { Position } from '../types/parkings'
 
-const SEARCH_RADIUS_M = 200000
-
 type Props = {
   center: Position
+  radiusM: number
 }
 
-export const SearchRadiusCircle = ({ center }: Props) => (
+export const SearchRadiusCircle = ({ center, radiusM }: Props) => (
   <Circle
     center={center}
-    radius={SEARCH_RADIUS_M}
+    radius={radiusM}
     options={{
       strokeColor: '#4285F4',
       strokeOpacity: 0.4,
