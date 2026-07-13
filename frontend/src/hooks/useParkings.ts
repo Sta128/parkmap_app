@@ -6,9 +6,24 @@ export const useParkings = () => {
 
   useEffect(() => {
     fetch('http://localhost:3000/parkings')
-      .then(res => res.json())
-      .then((data: Parking[]) => setParkings(data))
-      .catch(err => console.error('駐車場データ取得エラー:', err))
+      .then(res => {
+        if (!res.ok) {
+          throw new Error('駐車場データ取得エラー')
+        }
+        return res.json()
+      })
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setParkings(data)
+        } else {
+          console.error('駐車場データが配列ではありません:', data)
+          setParkings([])
+        }
+      })
+      .catch(err => {
+        console.error('駐車場データ取得エラー:', err)
+        setParkings([])
+      })
   }, [])
 
   return parkings
