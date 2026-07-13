@@ -51,6 +51,6 @@ from rates r
 join public.parking p on p.name = r.name;
 
 -- Example of an entry-based repeating maximum fee. Uncomment and adjust when needed.
--- insert into public.parking_max_fee_rules(parking_id, name, amount, duration_minutes, max_applications)
--- select id, '入庫から24時間最大', 1800, 1440, null
+-- insert into public.parking_max_fees(parking_id, kind, amount, duration_minutes, max_applications)
+-- select id, 'rolling', 1800, 1440, null
 -- from public.parking where name = 'NPC24H中華街第3パーキング';

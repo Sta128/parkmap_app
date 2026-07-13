@@ -15,6 +15,8 @@ drop function if exists public.generate_fee_segments(uuid, timestamptz, timestam
 drop function if exists public.get_next_rate_boundary(time, time, timestamptz, timestamptz);
 drop function if exists public.get_rate_at(uuid, timestamptz);
 
+drop table if exists public.parking_max_fees cascade;
+drop table if exists public.parking_daily_max_fees cascade;
 drop table if exists public.parking_max_fee_rules cascade;
 drop table if exists public.parking_rates cascade;
 drop table if exists public.parking_limits cascade;
@@ -69,20 +71,27 @@ create table public.parking_rates (
 
 create index parking_rates_parking_id_idx on public.parking_rates(parking_id);
 
--- Optional entry-based maximum fee. Example: 1,500 yen per 24 hours from entry.
--- max_applications NULL means the rule repeats until exit.
-create table public.parking_max_fee_rules (
+-- Maximum fee rules are stored in one table.
+-- kind = daily: cap each Japan-local calendar day; duration_minutes must be NULL.
+-- kind = rolling: cap each duration from entry; NULL max_applications means repeat until exit.
+-- Display labels are generated from kind and duration_minutes, so no name/text column is needed.
+create table public.parking_max_fees (
   id uuid primary key default gen_random_uuid(),
   parking_id uuid not null references public.parking(id) on delete cascade,
-  name text not null,
+  kind text not null check (kind in ('daily', 'rolling')),
   amount integer not null check (amount >= 0),
-  duration_minutes integer not null check (duration_minutes > 0),
+  duration_minutes integer,
   max_applications integer check (max_applications is null or max_applications > 0),
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  check (
+    (kind = 'daily' and duration_minutes is null and max_applications is null)
+    or
+    (kind = 'rolling' and duration_minutes is not null and duration_minutes > 0)
+  )
 );
 
-create index parking_max_fee_rules_parking_id_idx
-  on public.parking_max_fee_rules(parking_id);
+create index parking_max_fees_parking_id_idx
+  on public.parking_max_fees(parking_id);
 
 create or replace function public.set_updated_at()
 returns trigger
@@ -285,8 +294,7 @@ as $$
   ) x;
 $$;
 
--- Chooses the cheapest valid result among the base tariff and every configured
--- entry-based maximum-fee rule.
+-- Applies calendar-day and entry-based maximum fees and returns the cheapest valid total.
 create or replace function public.calculate_parking_fee(
   p_parking_id uuid,
   p_start timestamptz,
@@ -300,6 +308,10 @@ as $$
 declare
   v_best integer;
   v_candidate integer;
+  v_daily_amount integer;
+  v_day date;
+  v_day_start timestamptz;
+  v_day_end timestamptz;
   v_block_start timestamptz;
   v_block_end timestamptz;
   v_count integer;
@@ -311,9 +323,40 @@ begin
 
   v_best := public.calculate_base_parking_fee(p_parking_id, p_start, p_end);
 
+  -- A daily maximum is applied independently to every Japan-local calendar day.
+  select min(amount) into v_daily_amount
+  from public.parking_max_fees
+  where parking_id = p_parking_id and kind = 'daily';
+
+  if v_daily_amount is not null then
+    v_candidate := 0;
+    v_day := (p_start at time zone 'Asia/Tokyo')::date;
+
+    while v_day <= (p_end at time zone 'Asia/Tokyo')::date loop
+      v_day_start := (v_day::timestamp at time zone 'Asia/Tokyo');
+      v_day_end := ((v_day + 1)::timestamp at time zone 'Asia/Tokyo');
+
+      if greatest(p_start, v_day_start) < least(p_end, v_day_end) then
+        v_candidate := v_candidate + least(
+          public.calculate_base_parking_fee(
+            p_parking_id,
+            greatest(p_start, v_day_start),
+            least(p_end, v_day_end)
+          ),
+          v_daily_amount
+        );
+      end if;
+
+      v_day := v_day + 1;
+    end loop;
+
+    v_best := least(v_best, v_candidate);
+  end if;
+
+  -- Compare every entry-based rolling maximum rule.
   for v_rule in
-    select * from public.parking_max_fee_rules
-    where parking_id = p_parking_id
+    select * from public.parking_max_fees
+    where parking_id = p_parking_id and kind = 'rolling'
     order by amount, duration_minutes
   loop
     v_candidate := 0;
@@ -439,16 +482,17 @@ $$;
 alter table public.parking enable row level security;
 alter table public.parking_limits enable row level security;
 alter table public.parking_rates enable row level security;
-alter table public.parking_max_fee_rules enable row level security;
+alter table public.parking_max_fees enable row level security;
 
 create policy parking_public_read on public.parking for select to anon, authenticated using (true);
 create policy parking_limits_public_read on public.parking_limits for select to anon, authenticated using (true);
 create policy parking_rates_public_read on public.parking_rates for select to anon, authenticated using (true);
-create policy parking_max_rules_public_read on public.parking_max_fee_rules for select to anon, authenticated using (true);
+create policy parking_max_fees_public_read on public.parking_max_fees for select to anon, authenticated using (true);
 
 grant usage on schema public to anon, authenticated;
-grant select on public.parking, public.parking_limits, public.parking_rates, public.parking_max_fee_rules to anon, authenticated;
+grant select on public.parking, public.parking_limits, public.parking_rates, public.parking_max_fees to anon, authenticated;
 grant execute on function public.search_parkings(
   timestamptz, timestamptz, text, boolean, integer, integer, integer,
   integer, integer, boolean, boolean, boolean, integer
 ) to anon, authenticated;
+

@@ -93,3 +93,33 @@ Backend:
 - `npm run lint`
 - `npm run build`
 - Node.js構文チェック
+
+## 最大料金テーブルの統合マイグレーション
+既存のv6データベースを維持する場合は、Supabase SQL Editorで
+`supabase/max_fee_unification_migration.sql`を実行してください。
+`parking_max_fee_rules`と`parking_daily_max_fees`は`parking_max_fees`へ統合され、
+表示専用の`name/text`列は廃止されます。
+
+## v6 UI updates
+
+- Search radius is selected from a compact dial-style slider (0.5–200 km).
+- Google Places Autocomplete is initialized only once and stale suggestion overlays are removed on cleanup, preventing duplicated/darkened suggestion lists.
+
+## PGRST200 after the maximum-fee migration
+
+If Supabase reports that it cannot find the relationship between `parking` and
+`parking_max_fees`, run `supabase/fix_max_fee_relationship.sql` once. The backend
+also fetches these tables separately, so it no longer depends on PostgREST's
+embedded relationship cache for the parking list.
+
+## v9: 料金検索日時ダイヤル
+
+料金順検索の開始・終了日時は、日付と時刻のスライダーダイヤルで指定します。選択範囲はアプリを開いた現在時刻から3年後まで、時刻は15分刻みです。開始日時より前の終了日時は選択できず、開始日時を終了日時以降へ動かした場合は終了日時が自動的に1時間後へ補正されます。
+
+## PWAとしてインストール
+
+フロントエンドはPWA対応済みです。`docker compose up --build`で起動後、対応ブラウザでは、アドレスバーのインストールアイコン、またはブラウザメニューの「アプリをインストール」から追加できます。アプリ画面内には専用のインストールボタンを表示しません。
+
+- PCの`localhost`はインストール可能です。
+- スマートフォンなど別端末からアクセスする場合、Service Workerの要件によりHTTPSで公開してください。LAN内の単純な`http://PCのIP:5173`ではインストールできないブラウザがあります。
+- オフライン時は画面シェルを表示できますが、Google MapsとSupabaseの検索には通信が必要です。

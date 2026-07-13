@@ -1,25 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Parking, ParkingWithDistance, Position } from '../types/parkings'
 
-const SEARCH_RADIUS_M = 200000
-
 export const useDistanceMatrix = (
   origin: Position | null,
   parkings: Parking[],
-  apiLoaded: boolean
+  apiLoaded: boolean,
+  searchRadiusM: number
 ) => {
   const [sortedParkings, setSortedParkings] = useState<ParkingWithDistance[]>([])
   const [distanceLoading, setDistanceLoading] = useState(false)
   const lastCalcPosRef = useRef<Position | null>(null)
+  const lastRadiusRef = useRef<number | null>(null)
 
   const resetCache = useCallback(() => {
     lastCalcPosRef.current = null
+    lastRadiusRef.current = null
   }, [])
 
   useEffect(() => {
     if (!origin || parkings.length === 0 || !apiLoaded || typeof window.google === 'undefined') return
 
-    if (lastCalcPosRef.current) {
+    if (lastCalcPosRef.current && lastRadiusRef.current === searchRadiusM) {
       const dist = window.google.maps.geometry.spherical.computeDistanceBetween(
         new window.google.maps.LatLng(lastCalcPosRef.current.lat, lastCalcPosRef.current.lng),
         new window.google.maps.LatLng(origin.lat, origin.lng)
@@ -32,10 +33,11 @@ export const useDistanceMatrix = (
         new window.google.maps.LatLng(origin.lat, origin.lng),
         new window.google.maps.LatLng(p.lat, p.lng)
       )
-      return d <= SEARCH_RADIUS_M
+      return d <= searchRadiusM
     })
 
     lastCalcPosRef.current = origin
+    lastRadiusRef.current = searchRadiusM
 
     if (nearbyParkings.length === 0) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -83,7 +85,7 @@ export const useDistanceMatrix = (
         setSortedParkings(withDistance)
       }
     )
-  }, [origin, parkings, apiLoaded])
+  }, [origin, parkings, apiLoaded, searchRadiusM])
 
   return { sortedParkings, distanceLoading, resetCache }
 }

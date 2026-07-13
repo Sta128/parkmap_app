@@ -71,3 +71,11 @@ export default defineConfig([
   },
 ])
 ```
+
+## PWAとしてインストール
+
+フロントエンドはPWA対応済みです。`docker compose up --build`で起動後、対応ブラウザでは画面右上付近のインストールボタン、またはブラウザの「アプリをインストール」から追加できます。
+
+- PCの`localhost`はインストール可能です。
+- スマートフォンなど別端末からアクセスする場合、Service Workerの要件によりHTTPSで公開してください。LAN内の単純な`http://PCのIP:5173`ではインストールできないブラウザがあります。
+- オフライン時は画面シェルを表示できますが、Google MapsとSupabaseの検索には通信が必要です。
